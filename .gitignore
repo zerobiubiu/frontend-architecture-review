@@ -1,0 +1,30 @@
+# 依赖与构建产物
+frontend/node_modules/
+frontend/dist/
+frontend/coverage/
+frontend/playwright-report/
+frontend/test-results/
+frontend/blob-report/
+frontend/.vite/
+node_modules/
+dist/
+coverage/
+
+# 本地环境与敏感文件
+.env
+.env.*
+!frontend/.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.log
+
+# 系统/编辑器噪声
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.local
+.cache/
+.tmp/

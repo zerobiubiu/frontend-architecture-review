@@ -1,0 +1,15 @@
+# 前端工程只保留自己的构建产物与本地环境文件
+node_modules/
+dist/
+coverage/
+html/
+playwright-report/
+test-results/
+blob-report/
+.vite/
+*.local
+*.log
+
+.env
+.env.*
+!.env.example

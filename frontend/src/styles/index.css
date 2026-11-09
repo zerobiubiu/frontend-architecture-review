@@ -1,0 +1,34 @@
+/*
+ * 全局样式入口：必须是页面第一个样式入口，并在任何 @import 之前声明层顺序。
+ * 层顺序（Astryx 官方集成要求）：reset → theme → base → astryx-base → astryx-theme → components → utilities。
+ * - tailwind/theme + tailwind/preflight 提供 Tailwind v4 变量与基础重置
+ * - Astryx reset / astryx.css 提供组件外观
+ * - 项目主题是 `astryx theme build` 生成的预编译产物（作用域 data-astryx-theme="binance-stocks"）
+ * - tailwind-theme.css 把 Astryx Token 桥接为 Tailwind 工具类；utilities 最后，便于业务布局覆盖
+ */
+@layer reset, theme, base, astryx-base, astryx-theme, components, utilities;
+
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/preflight.css" layer(base);
+@import "@astryxdesign/core/reset.css";
+@import "@astryxdesign/core/astryx.css";
+@import "../theme/generated/binance-stocks.css";
+@import "@astryxdesign/core/tailwind-theme.css";
+@import "tailwindcss/utilities.css" layer(utilities);
+
+@layer components {
+  /* 业务级结构样式放在这里；组件外观一律走 Astryx props / 主题变量。 */
+  :root {
+    color-scheme: light dark;
+  }
+
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+
+  body {
+    margin: 0;
+  }
+}

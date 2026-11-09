@@ -1,0 +1,93 @@
+# frontend 工程打包清单（frontend-package-manifest.txt）
+
+- 包根目录：frontend-review-package/；下列路径均相对该目录。
+- 生成时间（UTC）：2026-11-09T19:05:31.661Z
+- 文件总数：70；总大小：333389 bytes（325.6 KiB）
+- 标记说明：ENTRY=入口；CONFIG=构建/工具配置；LOCK=依赖锁；THEME=主题源与生成产物；CORE=核心实现；TEST=测试；DOC=工程文档；SRC=其余源码；REVIEW=审查资料。★ 表示重要配置、入口或生成输入。
+- 已排除目录：node_modules、dist、coverage、playwright-report、test-results、.cache、.tmp、.git、.vite。
+- 已排除文件：.env 及 .env.local/.production/.development/.test、*.log、Thumbs.db、.DS_Store。
+- 分类计数：CONFIG=11，CORE=14，DOC=2，ENTRY=3，LOCK=1，REVIEW=2，SRC=12，TEST=16，THEME=9
+
+```text
+  大小(bytes)  标记    ★  路径
+------------  ------  --  ----------------------------------------
+        5460  REVIEW  ★  frontend-package-manifest.txt
+       20913  REVIEW  ★  frontend-review-guide.md
+         191  CONFIG  ★  frontend/.env.example
+         196  CONFIG  ★  frontend/.gitignore
+        1242  CONFIG  ★  frontend/biome.json
+       86809  LOCK    ★  frontend/bun.lock
+        6452  DOC        frontend/DEVELOPMENT.md
+         443  ENTRY   ★  frontend/index.html
+        2043  CONFIG  ★  frontend/package.json
+        1112  CONFIG  ★  frontend/playwright.config.ts
+         371  SRC        frontend/public/favicon.svg
+        3563  DOC        frontend/README.md
+         976  SRC        frontend/src/app/providers/app-providers.tsx
+         924  SRC        frontend/src/app/providers/query-client.ts
+        2418  SRC        frontend/src/app/providers/theme-provider.tsx
+         568  SRC        frontend/src/app/router/error-page.tsx
+        1313  ENTRY   ★  frontend/src/app/router/index.tsx
+         574  SRC        frontend/src/app/router/not-found.tsx
+        1600  SRC        frontend/src/app/router/root-layout.tsx
+         829  SRC        frontend/src/components/shared/theme-mode-toggle.tsx
+        8631  CORE       frontend/src/components/ui/data-table-shell.tsx
+        3017  CORE       frontend/src/components/ui/decimal-text-input.tsx
+        6581  CORE       frontend/src/components/ui/utc-datetime-field.tsx
+        2060  CORE       frontend/src/lib/decimal/decimal.ts
+        1611  CORE       frontend/src/lib/format/number.ts
+        7199  CORE       frontend/src/lib/time/instant.ts
+        3634  CORE       frontend/src/lib/time/zoned.ts
+         539  ENTRY   ★  frontend/src/main.tsx
+       27920  SRC        frontend/src/routes/dev/playground-page.tsx
+        3643  SRC        frontend/src/routes/home-page.tsx
+        2838  CORE       frontend/src/services/api/client.ts
+        4000  CORE       frontend/src/services/api/errors.ts
+        4413  CORE       frontend/src/services/api/request.ts
+        3417  CORE       frontend/src/services/api/response.ts
+        3682  CORE       frontend/src/services/api/types.ts
+        1582  CORE       frontend/src/services/realtime/parse.ts
+         935  CORE       frontend/src/services/realtime/types.ts
+        1269  SRC        frontend/src/styles/index.css
+         550  THEME   ★  frontend/src/theme/app-theme.ts
+       24935  THEME   ★  frontend/src/theme/generated/binance-stocks.css
+         285  THEME   ★  frontend/src/theme/generated/binance-stocks.css.d.ts
+         555  THEME   ★  frontend/src/theme/generated/binance-stocks.d.ts
+       20548  THEME   ★  frontend/src/theme/generated/binance-stocks.js
+         419  THEME   ★  frontend/src/theme/generated/binance-stocks.variants.d.ts
+        2085  THEME   ★  frontend/src/theme/icons.tsx
+         349  THEME   ★  frontend/src/theme/index.ts
+        1547  THEME   ★  frontend/src/theme/tokens.ts
+         163  SRC        frontend/src/vite-env.d.ts
+        7327  TEST       frontend/tests/e2e/playground.spec.ts
+        5984  TEST       frontend/tests/integration/api-client.test.ts
+        5634  TEST       frontend/tests/integration/data-table-shell.test.tsx
+        4574  TEST       frontend/tests/integration/decimal-text-input.test.tsx
+        2686  TEST       frontend/tests/integration/theme-dialog.test.tsx
+        3642  TEST       frontend/tests/integration/utc-datetime-field.test.tsx
+        1709  TEST       frontend/tests/msw/fixtures.ts
+        2838  TEST       frontend/tests/msw/handlers.ts
+         128  TEST       frontend/tests/msw/server.ts
+        2634  TEST       frontend/tests/setup.ts
+        5299  TEST       frontend/tests/unit/api-errors.test.ts
+        2030  TEST       frontend/tests/unit/decimal.test.ts
+        1110  TEST       frontend/tests/unit/format-number.test.ts
+        1236  TEST       frontend/tests/unit/realtime-parse.test.ts
+        2966  TEST       frontend/tests/unit/time-instant.test.ts
+        3109  TEST       frontend/tests/unit/time-zoned.test.ts
+         892  CONFIG  ★  frontend/tsconfig.app.json
+         159  CONFIG  ★  frontend/tsconfig.json
+         588  CONFIG  ★  frontend/tsconfig.node.json
+         885  CONFIG  ★  frontend/tsconfig.test.json
+         676  CONFIG  ★  frontend/vite.config.ts
+         879  CONFIG  ★  frontend/vitest.config.ts
+```
+
+## 数量统计
+
+- 全部文件：70
+- 前端源码与测试（src/**、tests/** 下 .ts/.tsx/.css）：51
+- 配置文件：11
+- 主题生成产物：5
+- 测试文件（tests/**）：16
+- 文档：4

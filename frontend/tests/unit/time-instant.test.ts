@@ -1,0 +1,79 @@
+import { describe, expect, it } from 'vitest';
+import {
+  formatInstantInZone,
+  offsetMinutesAt,
+  parseUtcInstant,
+  parseWallClockText,
+  utcTextFromFields,
+  zonedFieldsAt,
+} from '@/lib/time/instant';
+
+function requireInstant(text: string) {
+  const parsed = parseUtcInstant(text);
+  if (!parsed.ok) throw new Error(`测试用例时间无效: ${text}`);
+  return parsed.value;
+}
+
+describe('UTC 时间解析与序列化', () => {
+  it('保留六位小数秒并原样往返', () => {
+    const parsed = requireInstant('2026-03-08T06:30:00.123456Z');
+    expect(parsed.fraction).toBe('123456');
+    expect(parsed.raw).toBe('2026-03-08T06:30:00.123456Z');
+    expect(
+      utcTextFromFields({ ...zonedFieldsAt(parsed.epochMillis, 'UTC'), fraction: parsed.fraction }),
+    ).toBe('2026-03-08T06:30:00.123456Z');
+  });
+
+  it('七位小数秒报错而不是截断', () => {
+    const parsed = parseUtcInstant('2026-03-08T06:30:00.1234567Z');
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok) expect(parsed.code).toBe('fraction-digits');
+  });
+
+  it('拒绝非 UTC / 非法格式', () => {
+    for (const value of [
+      '2026-03-08 06:30:00Z',
+      '2026-03-08T06:30:00',
+      '2026-03-08T06:30Z',
+      '2026-3-8T06:30:00Z',
+      '',
+      ' 2026-03-08T06:30:00Z',
+    ]) {
+      expect(parseUtcInstant(value).ok, value).toBe(false);
+    }
+  });
+
+  it('校验日历：月份、日期、闰年与时间范围', () => {
+    expect(parseUtcInstant('2024-02-29T00:00:00Z').ok).toBe(true);
+    expect(parseUtcInstant('2026-02-29T00:00:00Z').ok).toBe(false);
+    expect(parseUtcInstant('2026-04-31T00:00:00Z').ok).toBe(false);
+    expect(parseUtcInstant('2026-13-01T00:00:00Z').ok).toBe(false);
+    expect(parseUtcInstant('2026-01-01T24:00:00Z').ok).toBe(false);
+    expect(parseUtcInstant('2026-01-01T23:60:00Z').ok).toBe(false);
+  });
+
+  it('按 IANA 时区展示时保留小数秒，且不回写', () => {
+    const instant = requireInstant('2026-03-08T06:30:00.123456Z');
+    expect(formatInstantInZone(instant, 'UTC')).toBe('2026-03-08 06:30:00.123456');
+    expect(formatInstantInZone(instant, 'America/New_York')).toBe('2026-03-08 01:30:00.123456');
+    expect(instant.raw).toBe('2026-03-08T06:30:00.123456Z');
+  });
+
+  it('纽约偏移随 DST 变化', () => {
+    const winter = requireInstant('2026-01-15T12:00:00Z');
+    const summer = requireInstant('2026-07-01T12:00:00Z');
+    expect(offsetMinutesAt(winter.epochMillis, 'America/New_York')).toBe(-300);
+    expect(offsetMinutesAt(summer.epochMillis, 'America/New_York')).toBe(-240);
+  });
+
+  it('解析纽约墙钟文本', () => {
+    const parsed = parseWallClockText('2026-11-01 01:30:00.654321');
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) {
+      expect(parsed.value.hour).toBe(1);
+      expect(parsed.value.fraction).toBe('654321');
+    }
+    expect(parseWallClockText('2026-11-01T01:30:00').ok).toBe(true);
+    expect(parseWallClockText('2026-11-01 01:30').ok).toBe(false);
+  });
+});
