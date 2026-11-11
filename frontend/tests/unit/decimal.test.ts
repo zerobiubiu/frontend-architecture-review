@@ -52,3 +52,49 @@ describe('decimal 字符串工具', () => {
     expect(normalizeDecimalText('x')).toBeNull();
   });
 });
+
+describe('十进制计算上下文（不再依赖 decimal.js 默认 20 位）', () => {
+  it('12 整数 + 18 小数的多个协议值求和保持精确', () => {
+    expect(sumDecimal(['999999999999.123456789012345678', '0.000000000000000001'])).toBe(
+      '999999999999.123456789012345679',
+    );
+  });
+
+  it('尾数进位与最大值附近的累加不丢位', () => {
+    expect(sumDecimal(['999999999999999999999999999.999999999999999999', '0.000000000000000001'])).toBe(
+      '1000000000000000000000000000',
+    );
+    expect(sumDecimal(['999999999999.123456789012345678', '0.000000000000000001'])).toBe(
+      '999999999999.123456789012345679',
+    );
+  });
+
+  it('多行累计保持精确（1000 × 1e-18）', () => {
+    const rows = Array.from({ length: 1000 }, () => '0.000000000000000001');
+    expect(sumDecimal(rows)).toBe('0.000000000000001');
+  });
+
+  it('正负抵消得到精确 0', () => {
+    expect(sumDecimal(['999999999999.123456789012345678', '-999999999999.123456789012345678'])).toBe('0');
+  });
+
+  it('超过上下文精度的输入明确拒绝，而不是静默舍入', () => {
+    const tooLong = `1.${'1234567890'.repeat(5)}1`;
+    const parsed = parseDecimal(tooLong);
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok) expect(parsed.reason).toBe('precision');
+    expect(sumDecimal([tooLong])).toBeNull();
+  });
+
+  it('规范化输出仍是同一解析器可读的普通十进制文本', () => {
+    for (const value of ['0.00000001', '-0.000000000000000001']) {
+      const normalized = normalizeDecimalText(value);
+      expect(normalized, value).not.toBeNull();
+      if (normalized !== null) {
+        expect(normalized).not.toMatch(/[eE]/);
+        expect(isDecimalString(normalized)).toBe(true);
+        expect(compareDecimal(normalized, value)).toBe(0);
+      }
+    }
+  });
+});

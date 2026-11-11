@@ -37,8 +37,9 @@ import {
   IconPlus,
   IconTrash,
 } from '@tabler/icons-react';
+import { onlineManager } from '@tanstack/react-query';
 import type { ColumnDef, ColumnVisibilityState, SortingState } from '@tanstack/react-table';
-import { type ReactNode, useMemo, useState } from 'react';
+import { type ReactNode, useMemo, useRef, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { useThemeMode } from '@/app/providers/theme-provider';
@@ -49,6 +50,7 @@ import { UtcDateTimeField } from '@/components/ui/utc-datetime-field';
 import { compareDecimal, isDecimalString } from '@/lib/decimal/decimal';
 import { formatDecimal } from '@/lib/format/number';
 import { parseUtcInstant } from '@/lib/time/instant';
+import { createSensitiveWriteGate, SensitiveWriteBlockedError } from '@/services/api/sensitive-write';
 
 const SYMBOLS = [
   { value: 'AAPL', label: 'AAPL · Apple' },
@@ -73,10 +75,11 @@ const orderDraftSchema = z.object({
     '股数最多十位小数；本表单不会自动截断',
   ),
   orderType: z.enum(['LIMIT', 'MARKET']),
-  reduceOnly: z.boolean(),
   scheduledStartAt: z
     .string()
     .refine((value) => value === '' || parseUtcInstant(value).ok, '计划开始必须是合法 UTC 时间'),
+  // 字段编辑有效性由 UtcDateTimeField 提供；纽约草稿无效/未消歧时必须阻止提交。
+  scheduledStartEditValid: z.boolean().refine((value) => value, '计划开始存在未解决的输入错误'),
   acknowledged: z.boolean().refine((value) => value, '必须确认这只是演示表单'),
 });
 
@@ -181,13 +184,26 @@ export function PlaygroundPage() {
       price: '',
       quantity: '',
       orderType: 'LIMIT',
-      reduceOnly: false,
       scheduledStartAt: '',
+      scheduledStartEditValid: true,
       acknowledged: false,
     },
     mode: 'onBlur',
   });
   const [submitted, setSubmitted] = useState<string | null>(null);
+  const [scheduledResetToken, setScheduledResetToken] = useState(0);
+  const [sensitiveWriteState, setSensitiveWriteState] = useState('idle');
+  const sensitiveAttempts = useRef(0);
+  const sensitiveGate = useMemo(
+    () =>
+      createSensitiveWriteGate({
+        isOnline: () => onlineManager.isOnline(),
+        getSessionEpoch: () => 1,
+        getAccountId: () => 'demo-account',
+        isConfirmationCurrent: (id) => id === 'demo-confirmation',
+      }),
+    [],
+  );
 
   const columns = useMemo<ColumnDef<typeof tableFeatures, DemoOrder>[]>(
     () => [
@@ -580,8 +596,46 @@ export function PlaygroundPage() {
       </Section>
 
       <Section
+        title="敏感写 fail-fast 门禁（仅演示，不发 Fetch）"
+        description="离线时立即失败，不进入可在恢复网络后自动发送的队列；恢复网络不构成新的用户确认。"
+      >
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            label="尝试敏感写（演示）"
+            variant="secondary"
+            onClick={() => {
+              void sensitiveGate
+                .run(
+                  {
+                    confirmationId: 'demo-confirmation',
+                    expectedSessionEpoch: 1,
+                    expectedAccountId: 'demo-account',
+                  },
+                  async () => {
+                    sensitiveAttempts.current += 1;
+                  },
+                )
+                .then(
+                  () => setSensitiveWriteState('sent'),
+                  (error: unknown) =>
+                    setSensitiveWriteState(
+                      error instanceof SensitiveWriteBlockedError ? `blocked:${error.reason}` : 'error',
+                    ),
+                );
+            }}
+          />
+          <Text size="sm" color="secondary" data-testid="sensitive-write-state">
+            状态：{sensitiveWriteState}
+          </Text>
+          <Text size="sm" color="secondary" data-testid="sensitive-write-attempts">
+            已发送：{sensitiveAttempts.current}
+          </Text>
+        </div>
+      </Section>
+
+      <Section
         title="React Hook Form + Zod + Astryx 适配"
-        description="Controller 显式映射空值；z.input 作为表单值，提交时得到 z.output；错误由字段 status 呈现。"
+        description="Controller 显式映射空值；z.input 作为表单值，提交时得到 z.output；错误由字段 status 呈现。本表单是演示模型，字段未与后端订单契约对齐，不作为接口验收依据。"
       >
         <form
           className="flex flex-col gap-4"
@@ -589,6 +643,11 @@ export function PlaygroundPage() {
           noValidate
           data-testid="rhf-form"
         >
+          <Banner
+            status="info"
+            title="演示模型"
+            description="本表单用于验证 RHF + Zod + Astryx 适配与提交门禁，字段/枚举未与后端订单契约对齐，不作为接口验收依据。"
+          />
           <div className="grid gap-4 md:grid-cols-2">
             <Controller
               control={form.control}
@@ -610,7 +669,7 @@ export function PlaygroundPage() {
               name="orderType"
               render={({ field }) => (
                 <Selector
-                  label="订单类型"
+                  label="订单类型（演示，不对应后端字段契约）"
                   options={[
                     { value: 'LIMIT', label: '限价' },
                     { value: 'MARKET', label: '市价' },
@@ -662,25 +721,35 @@ export function PlaygroundPage() {
               control={form.control}
               name="scheduledStartAt"
               render={({ field, fieldState }) => (
-                <UtcDateTimeField
-                  label="计划开始（可选）"
-                  value={field.value}
-                  onChange={field.onChange}
-                  onBlur={field.onBlur}
-                  ref={field.ref}
-                  status={fieldState.error ? { type: 'error', message: fieldState.error.message } : undefined}
-                />
+                <div className="flex flex-col gap-2">
+                  <UtcDateTimeField
+                    label="计划开始（可选）"
+                    value={field.value}
+                    onChange={field.onChange}
+                    onBlur={field.onBlur}
+                    ref={field.ref}
+                    resetToken={scheduledResetToken}
+                    onEditingStateChange={({ valid }) => {
+                      if (form.getValues('scheduledStartEditValid') !== valid) {
+                        form.setValue('scheduledStartEditValid', valid);
+                      }
+                    }}
+                    status={
+                      fieldState.error ? { type: 'error', message: fieldState.error.message } : undefined
+                    }
+                  />
+                  {form.formState.errors.scheduledStartEditValid ? (
+                    <Banner
+                      status="error"
+                      title="计划开始未完成"
+                      description={form.formState.errors.scheduledStartEditValid.message}
+                    />
+                  ) : null}
+                </div>
               )}
             />
 
             <div className="flex flex-col gap-3">
-              <Controller
-                control={form.control}
-                name="reduceOnly"
-                render={({ field }) => (
-                  <Switch label="仅减少仓位（演示）" value={field.value} onChange={field.onChange} />
-                )}
-              />
               <Controller
                 control={form.control}
                 name="acknowledged"
@@ -706,6 +775,7 @@ export function PlaygroundPage() {
               variant="secondary"
               onClick={() => {
                 form.reset();
+                setScheduledResetToken((token) => token + 1);
                 setSubmitted(null);
               }}
             />

@@ -1,0 +1,25 @@
+{
+    "name": "@project/api-contracts",
+    "version": "3.0.0",
+    "private": true,
+    "type": "module",
+    "types": "./index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./index.d.ts"
+        },
+        "./validation": {
+            "types": "./validation.ts",
+            "default": "./validation.ts"
+        }
+    },
+    "files": [
+        "index.d.ts",
+        "client.d.ts",
+        "validation.ts"
+    ],
+    "peerDependencies": {
+        "hono": "4.13.13",
+        "zod": "4.6.7"
+    }
+}

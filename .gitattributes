@@ -1,0 +1,12 @@
+# 跨平台检出保持工程统一的 LF 换行。
+* text=auto eol=lf
+
+# 上游原始快照逐字节保存，不做换行转换。
+docs/reference/llms.txt -text
+docs/reference/llms-full.txt -text
+
+# 大型任务归档组（任务书/外部输入/结论）逐字节保存，保证跨平台哈希稳定。
+docs/changes/[0-9][0-9][0-9][0-9]-*/** -text
+
+# 公开审查副本保留原始审查输入的字节；仅作用于此快照，不改变原项目规则。
+review-inputs/** -text

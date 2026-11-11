@@ -77,3 +77,59 @@ describe('UTC 时间解析与序列化', () => {
     expect(parseWallClockText('2026-11-01 01:30').ok).toBe(false);
   });
 });
+
+describe('时间精度与年份必须与后端有效小数规则一致', () => {
+  it('尾随零不增加有效精度，原始字符串仍完整保留', () => {
+    const cases = [
+      '2026-11-10T01:23:45.123456Z',
+      '2026-11-10T01:23:45.123456000Z',
+      '2026-11-10T01:23:45.0000000Z',
+      '2026-11-10T01:23:45.1234560Z',
+    ];
+    for (const input of cases) {
+      const parsed = parseUtcInstant(input);
+      expect(parsed.ok, input).toBe(true);
+      if (parsed.ok) expect(parsed.value.raw).toBe(input);
+    }
+  });
+
+  it('第七位有效小数被拒绝，不四舍五入', () => {
+    for (const input of [
+      '2026-11-10T01:23:45.1234567Z',
+      '2026-11-10T01:23:45.0000001Z',
+      '2026-11-10T01:23:45.123456789Z',
+    ]) {
+      const parsed = parseUtcInstant(input);
+      expect(parsed.ok, input).toBe(false);
+      if (!parsed.ok) expect(parsed.code).toBe('fraction-digits');
+    }
+  });
+
+  it('年份范围限定为 0001–9999', () => {
+    expect(parseUtcInstant('0000-01-01T00:00:00Z').ok).toBe(false);
+    expect(parseUtcInstant('0001-01-01T00:00:00Z').ok).toBe(true);
+    expect(parseUtcInstant('9999-12-31T23:59:59.999999Z').ok).toBe(true);
+  });
+
+  it('历史未改原值可原样透传（含尾零），提交层不做规范化', () => {
+    const stored = '2026-11-10T01:23:45.123456000Z';
+    const parsed = parseUtcInstant(stored);
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) {
+      expect(parsed.value.raw).toBe(stored);
+      expect(parsed.value.fraction).toBe('123456000');
+      expect(
+        utcTextFromFields({
+          ...zonedFieldsAt(parsed.value.epochMillis, 'UTC'),
+          fraction: parsed.value.fraction,
+        }),
+      ).toBe(stored);
+    }
+  });
+
+  it('纽约墙钟同样按有效小数校验', () => {
+    expect(parseWallClockText('2026-11-01 01:30:00.123456000').ok).toBe(true);
+    expect(parseWallClockText('2026-11-01 01:30:00.1234567').ok).toBe(false);
+    expect(parseWallClockText('0000-11-01 01:30:00').ok).toBe(false);
+  });
+});

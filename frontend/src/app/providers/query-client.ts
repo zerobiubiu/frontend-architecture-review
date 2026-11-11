@@ -5,7 +5,9 @@ import { ApiOutcomeError, isRetryableReadFailure } from '@/services/api/errors';
  * 统一 QueryClient 默认值：
  * - 读：30s 内视为新鲜；窗口聚焦重取（金融数据以服务端为准）；
  * - 读失败：仅网络/429/5xx 最多重试 2 次；
- * - 写：永不自动重试（任何交易副作用都必须由原操作标识人工/流程核对）。
+ * - 写：永不自动重试（任何交易副作用都必须由原操作标识人工/流程核对）；
+ *   全局 `networkMode:online` 会在离线时暂停 mutation 并在恢复网络后继续，
+ *   敏感写操作必须改用 services/api/sensitive-write 的 fail-fast 门禁（networkMode:always）。
  */
 export function createQueryClient(): QueryClient {
   return new QueryClient({

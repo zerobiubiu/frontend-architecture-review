@@ -5,25 +5,30 @@
  * 不预先编造具体业务 DTO。业务 DTO 等对应接口接入时再按后端契约补充。
  */
 
-export type OperationStatus = 'PROCESSING' | 'SUCCEEDED' | 'REJECTED' | 'UNKNOWN' | 'CONFLICT';
+export const OPERATION_STATUSES = ['PROCESSING', 'SUCCEEDED', 'REJECTED', 'UNKNOWN', 'CONFLICT'] as const;
+export type OperationStatus = (typeof OPERATION_STATUSES)[number];
 
-export type OperationKind =
-  | 'ORDER_CANCEL'
-  | 'TASK_CONTROL'
-  | 'USER_UPDATE'
-  | 'ACCOUNT_RESTRICT'
-  | 'ACCOUNT_CHECK'
-  | 'ACCOUNT_SYNC'
-  | 'ACCOUNT_RECONCILE'
-  | 'PLATFORM_UPDATE';
+export const OPERATION_KINDS = [
+  'ORDER_CANCEL',
+  'TASK_CONTROL',
+  'USER_UPDATE',
+  'ACCOUNT_RESTRICT',
+  'ACCOUNT_CHECK',
+  'ACCOUNT_SYNC',
+  'ACCOUNT_RECONCILE',
+  'PLATFORM_UPDATE',
+] as const;
+export type OperationKind = (typeof OPERATION_KINDS)[number];
 
-export type OperationTargetType = 'ORDER' | 'TASK' | 'USER' | 'ACCOUNT' | 'PLATFORM';
+export const OPERATION_TARGET_TYPES = ['ORDER', 'TASK', 'USER', 'ACCOUNT', 'PLATFORM'] as const;
+export type OperationTargetType = (typeof OPERATION_TARGET_TYPES)[number];
 
 /**
  * 原操作回执（单一时态形状）。
  *
- * 必填的只有识别该次操作所需的 id / kind / status；契约中其余字段在运行时可缺失或为 null，
- * 因此这里统一表达为可空，解析时缺失即填 null，绝不用默认业务值补造。
+ * 后端公开回执要求完整的 id / kind / targetType / targetId / status 等字段。
+ * 本层为诊断保留不完整回执，解析时目标等缺失字段填 null；“可解析”不等于可采用终态，
+ * 原意图结论仍须由 errors.ts 绑定发送前确定的完整原请求身份。
  */
 export interface OperationReceipt {
   readonly id: string;
@@ -43,7 +48,18 @@ export interface OperationReceipt {
   readonly raw: unknown;
 }
 
-/** 后端统一错误体；`operationAccepted: false` 表示请求未被接受。 */
+/**
+ * 回执解析三态：
+ * - absent：响应没有携带 operation；
+ * - valid：结构可识别并已收窄；
+ * - invalid：携带了 operation 但无法识别（未知 status/kind、缺 id 等），必须保留原始值诊断。
+ */
+export type ReceiptParse =
+  | { readonly kind: 'absent' }
+  | { readonly kind: 'valid'; readonly receipt: OperationReceipt }
+  | { readonly kind: 'invalid'; readonly raw: unknown; readonly reason: string };
+
+/** 后端统一错误体；`operationAccepted: false` 表示当前 HTTP 尝试未被接受。 */
 export interface ApiErrorBody {
   readonly code: string;
   readonly message: string;
@@ -55,17 +71,27 @@ export interface ApiErrorBody {
 export type TransportFailureReason = 'network' | 'timeout' | 'aborted';
 
 /**
- * HTTP 结果信封：HTTP 非 2xx 不抛异常，也不丢弃 `operation`。
- * - `http-error`：拿到了 HTTP 响应，可能同时带原操作回执；
- * - `transport-error`：没有可用的 HTTP 响应（网络/超时/取消），写请求一律按“未知”处理；
- * - `malformed`：有响应但结构不符合协议，同样不能断言业务未执行。
+ * HTTP 结果信封：HTTP 非 2xx 不抛异常，也不丢弃回执。
+ * - `success`：2xx 且含 `data`；
+ * - `http-data`：非 2xx 但含可读 `data`（例如 /healthz 503 降级详情），不是业务成功；
+ * - `http-error`：非 2xx 且符合公开错误信封；
+ * - `transport-error`：没有可用 HTTP 响应；`attempted` 表示请求是否已经发出；
+ * - `malformed`：有响应但结构不符合协议，不能断言业务未执行。
  */
 export type ApiOutcome<T> =
   | {
       readonly kind: 'success';
       readonly status: number;
       readonly data: T;
-      readonly operation: OperationReceipt | null;
+      readonly receipt: ReceiptParse;
+      readonly requestId: string | null;
+      readonly sessionEpoch: number;
+    }
+  | {
+      readonly kind: 'http-data';
+      readonly status: number;
+      readonly data: T;
+      readonly receipt: ReceiptParse;
       readonly requestId: string | null;
       readonly sessionEpoch: number;
     }
@@ -73,12 +99,13 @@ export type ApiOutcome<T> =
       readonly kind: 'http-error';
       readonly status: number;
       readonly error: ApiErrorBody;
-      readonly operation: OperationReceipt | null;
+      readonly receipt: ReceiptParse;
       readonly sessionEpoch: number;
     }
   | {
       readonly kind: 'transport-error';
       readonly reason: TransportFailureReason;
+      readonly attempted: boolean;
       readonly message: string;
       readonly sessionEpoch: number;
     }
@@ -87,7 +114,7 @@ export type ApiOutcome<T> =
       readonly status: number;
       readonly message: string;
       readonly body: unknown;
-      readonly operation: OperationReceipt | null;
+      readonly receipt: ReceiptParse;
       readonly sessionEpoch: number;
     };
 

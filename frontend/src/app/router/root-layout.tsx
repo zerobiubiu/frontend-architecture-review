@@ -1,26 +1,33 @@
-import { Link, Outlet } from '@tanstack/react-router';
+import { Link, Outlet, useLocation } from '@tanstack/react-router';
+import { useSession } from '@/app/runtime-context';
+import { ApplicationShell } from '@/components/shared/application-shell';
+import { PROTOCOL_STUB_MODE, ProtocolModeBanner } from '@/components/shared/protocol-mode-banner';
 import { ThemeModeToggle } from '@/components/shared/theme-mode-toggle';
+import { PlaygroundLayout } from './playground-layout';
 
-/** 应用外壳：本阶段只用 Tailwind 布局 + Astryx 组件，不引入第二套导航组件库。 */
 export function RootLayout() {
+  const location = useLocation();
+  const snapshot = useSession();
+  if (import.meta.env.DEV && location.pathname === '/dev/playground') return <PlaygroundLayout />;
+  if (snapshot.status === 'authenticated' && location.pathname !== '/login') {
+    return (
+      <ApplicationShell>
+        <Outlet />
+      </ApplicationShell>
+    );
+  }
   return (
-    <div className="flex min-h-screen flex-col bg-body text-primary">
+    <div className="flex min-h-dvh flex-col bg-body text-primary">
+      {PROTOCOL_STUB_MODE ? <ProtocolModeBanner /> : null}
       <header className="border-border border-b bg-surface">
-        <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-4 px-4 py-3">
-          <Link to="/" className="font-semibold text-primary text-sm no-underline">
-            量化交易平台 · 前端工程
+        <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-4">
+          <Link to="/" className="font-semibold text-primary no-underline">
+            美股交易管理
           </Link>
-          <nav aria-label="主导航" className="flex items-center gap-4 text-secondary text-sm">
-            <Link to="/" className="text-secondary no-underline hover:text-primary">
-              工程概览
+          <div className="flex flex-wrap items-center gap-4">
+            <Link to="/login" search={{ returnTo: '/' }} className="text-secondary text-sm">
+              账号登录
             </Link>
-            {import.meta.env.DEV ? (
-              <Link to="/dev/playground" className="text-secondary no-underline hover:text-primary">
-                Engineering Playground
-              </Link>
-            ) : null}
-          </nav>
-          <div className="ms-auto">
             <ThemeModeToggle />
           </div>
         </div>
@@ -28,8 +35,8 @@ export function RootLayout() {
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">
         <Outlet />
       </main>
-      <footer className="border-border border-t px-4 py-3 text-center text-secondary text-xs">
-        前端工程底座：React + Vite + Astryx + Tailwind CSS v4。当前不连接真实后端，不执行任何真实交易。
+      <footer className="border-border border-t px-4 py-4 text-center text-secondary text-xs">
+        平台身份与业务连接分别确认；客户端状态不构成交易许可。
       </footer>
     </div>
   );

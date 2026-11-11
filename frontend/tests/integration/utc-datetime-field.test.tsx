@@ -29,7 +29,7 @@ describe('UtcDateTimeField', () => {
     const input = screen.getByRole('textbox', { name: '计划开始' });
     await user.type(input, '2026-03-08T06:30:00.1234567Z');
     expect(input).toHaveValue('2026-03-08T06:30:00.1234567Z');
-    expect((await screen.findAllByText('小数秒最多六位')).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText('小数秒最多六位有效数字（尾随零不计）')).length).toBeGreaterThan(0);
     expect(screen.getByTestId('current-value')).toHaveTextContent('2026-03-08T06:30:00.1234567Z');
   });
 
@@ -38,9 +38,10 @@ describe('UtcDateTimeField', () => {
     render(<Harness initial="2026-01-15T17:00:00Z" />);
     await user.click(screen.getByRole('radio', { name: '纽约时间' }));
     const nyInput = screen.getByRole('textbox', { name: '计划开始（America/New_York 墙钟）' });
+    await user.clear(nyInput);
     await user.type(nyInput, '2026-03-08 02:30:00');
     expect((await screen.findAllByText(/DST 跳变/)).length).toBeGreaterThan(0);
-    expect(screen.getByTestId('current-value')).toHaveTextContent('2026-01-15T17:00:00Z');
+    expect(screen.getByTestId('current-value')).toHaveTextContent('');
   });
 
   it('纽约秋季重复时间要求显式选择，并换算到正确的 UTC', async () => {

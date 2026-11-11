@@ -68,6 +68,9 @@ if (dialogPrototype && typeof dialogPrototype.showModal !== 'function') {
   };
 }
 
+// jsdom 没有布局或视口滚动；路由滚动的真实交互由 Chromium 验证。
+window.scrollTo = () => undefined;
+
 if (!HTMLElement.prototype.scrollIntoView) {
   HTMLElement.prototype.scrollIntoView = () => undefined;
 }

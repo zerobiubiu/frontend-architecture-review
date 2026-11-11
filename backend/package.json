@@ -1,0 +1,48 @@
+{
+    "name": "equity-backend",
+    "version": "3.0.0",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "dev": "bun scripts/start.ts --dev",
+        "start": "bun scripts/start.ts",
+        "api": "NODE_ENV=production bun dist/api.js",
+        "api:dev": "bun src/server/index.ts",
+        "worker": "NODE_ENV=production bun dist/worker.js",
+        "worker:dev": "bun src/worker/index.ts",
+        "setup": "bun scripts/setup.ts",
+        "db:generate": "drizzle-kit generate",
+        "db:migrate": "bun scripts/migrate.ts",
+        "db:seed": "bun scripts/seed.ts",
+        "logs": "bun scripts/logs.ts",
+        "stocks:diagnose": "bun scripts/stocks-assets-diagnose.ts",
+        "format": "biome format --write src tests scripts package.json tsconfig.json tsconfig.contracts.json drizzle.config.ts biome.json",
+        "format:check": "biome format src tests scripts package.json tsconfig.json tsconfig.contracts.json drizzle.config.ts biome.json",
+        "contracts:export": "bun scripts/export-contracts.ts",
+        "contracts:prepare": "bun scripts/contracts-sync.ts",
+        "contracts:check": "bun scripts/contracts-sync.ts --check",
+        "contracts:source:check": "bun scripts/export-contracts.ts --check",
+        "build": "bun scripts/build.ts",
+        "typecheck": "tsc --noEmit",
+        "test": "bun test tests",
+        "test:db": "bun scripts/test-db.ts",
+        "check": "bun run format:check && bun run typecheck && bun run test:db && bun run contracts:source:check && bun run contracts:prepare && bun run contracts:check && bun run build"
+    },
+    "dependencies": {
+        "@binance/common": "2.5.2",
+        "@binance/stocks": "1.0.6",
+        "@binance/wallet": "22.2.7",
+        "@hono/zod-validator": "0.9.1",
+        "axios": "1.20.0",
+        "decimal.js": "10.6.0",
+        "drizzle-orm": "0.45.4",
+        "hono": "4.13.13",
+        "zod": "4.6.7"
+    },
+    "devDependencies": {
+        "@biomejs/biome": "2.6.2",
+        "@types/bun": "1.4.4",
+        "drizzle-kit": "0.31.11",
+        "typescript": "7.0.2"
+    }
+}

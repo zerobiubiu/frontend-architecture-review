@@ -4,7 +4,10 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   plugins: [react()],
+  define: { 'import.meta.env.VITE_API_BASE_URL': JSON.stringify('http://localhost/api/v1') },
   resolve: {
+    preserveSymlinks: true,
+    dedupe: ['react', 'react-dom', 'zod', 'hono'],
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },

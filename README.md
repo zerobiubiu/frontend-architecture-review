@@ -1,110 +1,134 @@
-# Frontend Architecture Review Snapshot
+# 第三阶段前端源码公开审查快照
 
-Frontend architecture review snapshot for a React trading platform.
+这是量化交易平台第三阶段的**独立源码审查快照**，不是正式部署仓库，不包含可运行的完整后端，不连接真实资金账户。请从 [0071 实施与验收报告](docs/changes/0071-frontend-readonly-business-features.md)及 [审查资料索引](docs/REVIEW-INDEX.md)开始。
 
-本仓库是一个量化交易平台前端工程的**只读审查快照**，用于外部 AI/工程师做源码级技术审查。快照取自开发仓库 `astryx-dev` 分支（前端底座提交 `26af928`、`f82fed1`），只包含前端工程与审查资料，不包含后端源码、原仓库 Git 历史或任何正式环境配置。
+- 来源项目代码：astryx-dev / `47ec2d98e95cbac10c74991a4eaf9b4061d0379b`。
+- 公开历史基线：本仓库 main 的 `e91981da2f113bb9873559e6819530dbd2cacbe2`；第三阶段使用独立 stage3-source-review 分支，不覆盖 main 或旧提交。
+- 这是完整 frontend（源代码、公开资源、配置、锁文件、单元/集成/E2E、MSW、本地协议桩、主题源与生成物），不是只打包 docs 的资料包。
+- 未完成真实隔离后端登录／Cookie／业务联调；没有下单、撤单、任务控制、账户限制、用户或风控写入口，也没有完整 Operation Recovery。
+- 本轮另外做了公开健康与匿名认证 GET 的只读诊断，不代表已验证真实用户登录。见 [本地认证诊断](docs/changes/0071-frontend-auth-local-runtime-diagnosis.md)。
 
-当前阶段仅完成 **Frontend Bootstrap**：工程底座、设计系统、基础组件、API 协议骨架与测试体系；**不包含真实交易业务，也未连接真实后端**。
+## 技术栈与边界
 
-## 技术栈
-
-| 领域 | 选择 |
+| 领域 | 来源清单/锁定栈 |
 |---|---|
-| UI | React 19.3、TypeScript 5.9 |
-| 构建 | Vite 8（纯静态 SPA，无 SSR） |
-| 运行时/包管理 | Bun 1.4.3（`bun.lock`） |
-| 设计系统 | Astryx 0.7.11（core / theme-neutral / cli，唯一主 UI） |
-| 样式 | Tailwind CSS v4 + Astryx CSS 变量（固定 Cascade Layers） |
-| 图标 | Tabler Icons → Astryx 语义图标注册表 |
-| 路由 | TanStack Router 1.x（代码路由） |
-| 服务端状态 | TanStack Query 5.x |
-| 表格逻辑 | TanStack Table 9.x（服务端分页） |
-| 表单/校验 | React Hook Form 7 + Zod 4 |
-| 测试 | Vitest 5、React Testing Library、MSW 3、Playwright 1.65 |
-| 静态检查 | Biome 2.6 + `tsc -b --noEmit` |
+| 前端 | React 19.3.1、TypeScript 5.9.3、Vite 8.3.7，纯静态 SPA |
+| UI | Astryx 0.7.11（core/theme-neutral/cli 一致）、Tailwind v4.3.5、Tabler Icons |
+| 路由/状态 | TanStack Router 1.170.46、Query 5.107.1、Table 9.3.1；唯一 Session Manager/QueryClient |
+| 契约 | Hono 精确 4.13.13；本地 @project/api-contracts；Zod 4.6.7 |
+| 表单/金融 | RHF 7.91.0、decimal.js 10.6.0；金融字符串与独立 Decimal Context |
+| 验证 | Vitest 5.1、RTL、MSW 3.0.4、Playwright 1.65、Biome 2.6.6 |
+| Bun | 清单约定 bun@1.4.3、engines>=1.4.0；发布验证宿主为 Bun 1.4.4，无依赖升级 |
 
-## 项目结构
+需要安装 Bun 时请使用[官方安装说明](https://bun.sh/docs/installation)；本快照不提供第三方安装器，不要求安装后端 SDK 或数据库。实际依赖与精确解析以 frontend/package.json、bun.lock 为准。
+
+## 结构
 
 ```text
-.
-├── frontend/                    # 完整前端工程（可独立安装/测试/构建）
-│   ├── src/
-│   │   ├── app/                 # Provider 与代码路由
-│   │   ├── routes/              # 首页 + Engineering Playground
-│   │   ├── components/          # DecimalTextInput / UtcDateTimeField / DataTableShell
-│   │   ├── lib/                 # 十进制、UTC/DST、Intl 展示
-│   │   ├── services/            # Fetch API Client 与 SSE 帧解析
-│   │   ├── theme/               # Astryx 主题源、Tabler 图标、生成产物
-│   │   └── styles/              # Cascade Layers 与全局样式入口
-│   ├── tests/                   # unit / integration / e2e / msw
-│   └── public/
-└── docs/
-    ├── frontend-review-guide.md # 审查说明（架构、依赖、测试、已知问题、审查建议）
-    ├── frontend-package-manifest.txt # 打包清单（由审查 ZIP 生成；路径 frontend/... 与本仓库一致）
-    └── 0066-frontend-bootstrap.md    # 前端底座变更记录（已脱敏本地绝对路径）
+frontend/                  # 完整独立前端
+  src/app/                 # Provider、Router、Session Epoch、授权 Query 收敛
+  src/features/            # auth + 十二个只读 Feature
+  src/services/api/        # 唯一 Hono RPC/原生传输/响应与身份回执边界
+  src/services/realtime/   # 业务 SSE、独立行情 SSE、共享有界连接策略
+  src/components/         # Astryx 壳、表格、金融/时间字段、只读状态和来源
+  tests/                   # 全部单元/集成/类型负例/E2E/MSW/无交易协议桩
+backend/                   # 仅契约审查材料，不是完整后端
+  package.json
+  .gitignore
+  scripts/contract-entry.ts
+  scripts/contracts-sync.ts
+  contracts/              # 原始规范公开声明和校验模块
+  api-contracts/          # 本分支明确收录的四文件生成副本
+                            # 原项目该目录仍被忽略，没有修改原项目规则
+docs/                      # 第一至第三阶段历史及公开接口资料
+  review/                  # 契约来源摘录、本次快照实际验证记录
 ```
 
-说明：
+原后端 AppType 的两行逐字摘录及其必要类型闭包见 [backend-contract-provenance.md](docs/review/backend-contract-provenance.md)。没有创建假的 backend/src/server/app.ts，也没有把展开后的 ApiClient 作为 AppType 传给 hc。
 
-- `docs/frontend-package-manifest.txt` 是原始审查包的清单，两个审查文件在原包中位于根目录，本仓库中位于 `docs/`；清单里的 `frontend/...` 路径与本仓库一致。
-- 本仓库不包含 `backend/`、`node_modules/`、构建产物、覆盖率报告、Playwright 报告或 `.env` 实际配置。
+## 先生成本地契约，再安装前端
 
-## 安装与运行
+从本快照根目录：
 
 ```bash
-cd frontend
+bun run --cwd backend contracts:prepare
+bun run --cwd backend contracts:check
+bun install --cwd frontend --frozen-lockfile
+bun run --cwd frontend contracts:check
+```
+
+prepare 只读取随附 backend/package.json 与 contracts 两个公开源，通过脚本自身位置生成 api-contracts 四文件，**不启动 API、Worker、数据库、SDK**。前端 file 依赖指向 file:../backend/api-contracts，消费检查还比对真正安装副本。
+
+这不等于从 AppType 重新推导规范声明。本快照不含完整服务器类型图或原导出工具链，不能运行或声称通过 backend 的 contracts:export、contracts:source:check、dev/start/setup/db:*、后端完整 build/check。不要在 backend 执行 bun install 或 bun dev 来测试本快照。
+
+frontend/README.md、DEVELOPMENT.md 是完整原项目的原文；其中涉及完整后端安装／运行的段落不适用于此最小审查后端，快照运行顺序以本 README 为准。
+
+## 本地运行与 API 地址
+
+```bash
+bun run --cwd frontend dev
+```
+
+普通 dev 没有自动 Mock 回退，也没有 Vite API proxy。默认 /api/v1 会发向当前前端 origin；仅启动 Vite不提供真实认证，因此可能显示“暂时无法确认会话”，不能据此放宽认证 schema 或伪造登录。
+
+若另有单独授权的隔离 API，才在自己的 frontend/.env.local 设置公开 API 地址并核对精确 CORS：
+
+```env
+VITE_API_BASE_URL=http://localhost:3020/api/v1
+```
+
+上例应配合同主机写法的 http://localhost:5173 前端，API必须真实可达且允许该精确 Origin。也可全部使用127.0.0.1，但必须先让前端真的监听并能以该地址访问。不要混用 localhost 与127后仅因CORS正常就忽略 SameSite；不要关闭安全策略、使用通配凭据CORS或把Cookie改为localStorage token。
+
+没有提供真实 .env、用户密码、Cookie、CSRF／Session Token、API Key/Secret、数据库连接串、主密钥或私钥。测试中的明确 Mock 凭据／token 常量是合成测试数据，不是可用账户。
+
+## 验证
+
+在 frontend/ 执行：
+
+```bash
 bun install --frozen-lockfile
-bun run dev
-```
-
-开发服务器默认 `http://localhost:5173`，开发环境可访问 `/dev/playground`（生产构建不注册该路由）。本工程不需要后端运行即可开发与测试。
-
-## 测试
-
-```bash
-cd frontend
+bun run contracts:check
 bun run typecheck
 bun run lint
 bun run test:run
+bun run test:coverage
+bun run theme:check
 bun run build
-bunx playwright test   # 使用本机 Chrome（channel: chrome）
+PLAYWRIGHT_PORT=5273 bunx --no-install playwright test --retries=0
 ```
 
-审查时的实际结果见 `docs/frontend-review-guide.md` 第 6 节；这些数字来自快照生成时的真实执行，不随本仓库后续状态自动更新。
+PowerShell 可先 `$env:PLAYWRIGHT_PORT='5273'` 再运行最后一条。Playwright使用已经安装的 Chrome；若没有浏览器，不能把未执行写为通过，也不要自动安装／升级浏览器。
 
-## 当前实现范围
+E2E明确使用无交易能力的协议桩：自动独占本机18770、专用Vite5273和生产预览4173；先 build，不默认复用已有服务器，不结束用户5173／后端进程。Cookie/CORS/EventSource是真实浏览器机制，数据仍是明确Mock，不是后端联调。
 
-已完成：
+历史0071中的588／65是原轮证据；**本次发布副本的命令、退出码和结果另记录在 docs/review/stage3-snapshot-verification.md，不挪用历史结果**。类型负例由正式TS项目编译，不在运行时执行非法调用。
 
-- 独立 Bun + Vite 8 + React 19 + TypeScript 工程，可独立安装、开发、测试与构建。
-- Astryx 0.7.11 集成：预编译主题、Tabler 语义图标、Light/Dark/System、固定 CSS 层。
-- Tailwind CSS v4 与 Astryx Token 桥接，Engineering Playground 逐项可操作验证。
-- 三个基础组件：`DecimalTextInput`（字符串精度）、`UtcDateTimeField`（六位小数秒 + DST 消歧）、`DataTableShell`（服务端分页单一拥有者）。
-- Fetch API Client 语义骨架（operation 保留、写请求不重试、未知结果分类）与业务 SSE 帧解析。
-- Vitest/RTL/MSW 单元与集成测试、Playwright 浏览器 E2E。
+## 当前只读能力与安全保留
 
-尚未完成：
+已实现21个业务路由：工作台；账户列表/详情；证券搜索/目录/已加载规则；报价；订单与任务列表/详情；名义/官方候选持仓；官方成交历史；账本；核对；操作回执与业务事件；管理员概览/用户及详情/账户/审计/系统健康。
 
-- 真实登录、会话、CSRF 流程与 Session Epoch 模块。
-- Business SSE Manager（连接、退避、失效映射）。
-- Operation Recovery（原操作本地持久化与恢复入口）。
-- 账户、证券、订单、任务、持仓、账本、管理等业务 Feature。
-- 真实后端联调、真实资金与真实交易。
+- TRADER本人、ADMIN后端授权范围；普通管理读不需要canManageAdmins，但不授予专项管理写或交易能力。
+- Query key包含epoch/user/account/resource/有效参数，访问拒绝不因503/重挂载复活旧数据；SSE只做有限通知收敛，不当作可靠事件日志或交易终态。
+- 非2xx回执保留、receipt absent/valid/invalid、attempt/intent分离、完整发送前OriginalOperationIdentity匹配、发送后未知语义和敏感写门禁均保留。没有网络恢复重放交易意图。
+- 金融值为字符串，未知不补零；Funding/Spot、USD/USDC、本地名义和官方候选分别展示，不计算权威资产或盈亏。
+- 历史UTC保留原串和九位小数，展示不回写；R2-02/03/04和历史时间编辑透传继续登记，没有因只读验收被关闭。
+- 生成主题与源一起提供；不手改生成CSS、不引入第二套UI。
 
-## 审查目的
+## 历史文档与公开范围
 
-请重点检查：
+0066～0070和阶段任务书按原文保留，描述的是各自当时状态，不用旧报告覆盖当前实现。
 
-- 工程架构与目录职责是否合理，是否存在过度设计或缺失边界。
-- 技术栈集成（Bun/Vite/Astryx/Tailwind/TanStack/RHF/Zod）是否正确。
-- Astryx 与 Tailwind 的样式层共存是否稳健。
-- 基础组件设计，尤其金融数值精度、UTC 六位小数与 DST 处理。
-- API Client 对非 2xx、operation 与未知结果的语义。
-- 测试覆盖是否足够，测试基础设施是否可靠。
-- 性能、依赖与长期维护风险。
+- 0070索引中的旧根 api-contracts/README.md 已随迁移失效：本快照只解释，不创建兼容README、旧脚本或假运行文件。
+- 旧报告中原项目 backend/src、数据库、Worker、SDK、完整后端README、运行日志或未提供材料的链接，不代表这些文件在本快照存在；不得据此自行拼一个后端。
+- 已提交的九张归档PNG均明确Mock；不复制 test-results、浏览器trace、运行日志或全部review证据ZIP。
+- node_modules、dist、coverage、playwright-report、test-results、.git、缓存、真实环境、凭据均不属于发布树。
 
-详细问题清单见 [docs/frontend-review-guide.md](docs/frontend-review-guide.md) 第 8 节。
+本分支完成发布后等待独立源码审查，不自动进入第四阶段、部署或连接真实资金。文件清单与SHA-256见 SNAPSHOT-MANIFEST.json；该清单明确不自存自身哈希，整体摘要由发布结果另行记录。
 
-## 许可证
+## 发布前内容检查与用户确认
 
-本仓库未添加开源许可证；仅用于技术审查，默认保留所有权利。如需复用请先联系仓库所有者。
+本轮先对全部候选文本检查，不仅检查文件名；九张归档PNG也逐张审阅。两份额外历史架构报告中的数据库地址及主密钥形态曾导致暂停公开发布。用户随后明确确认“这些信息都是假的占位信息，公开也无妨”，因此保留历史原文并记录授权，不在新记录中列匹配值；不是默认忽略扫描或把真实运行环境公开。
+
+十二处前端凭据字面量与三个长ID均已核对为明确的合成测试输入／伪广播／精度边界，未删除必要测试。其余范围没有未解决的敏感候选，详见[内容安全检查](docs/review/stage3-security-scan.md)与[本轮实际验证](docs/review/stage3-snapshot-verification.md)。本结论不把静态审阅替代真实工程测试，也不构成实盘授权。
+
+原始任务输入部分含CRLF，本快照只为 review-inputs/** 增加 -text 属性以保持其原字节；未改原项目属性或历史正文。旧Markdown的两个空格换行/末尾空行保持原文，不为Git空白提示重新格式化历史；新增代码、配置与本轮元数据另作定向空白检查。

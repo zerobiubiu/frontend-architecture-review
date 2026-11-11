@@ -1,45 +1,160 @@
-import type { ApiOutcome, OperationReceipt } from './types';
+import type { ApiOutcome, OperationKind, OperationReceipt, OperationTargetType, ReceiptParse } from './types';
 
 /**
- * 写请求结果分类（用于决定“刷新/重试/核对”，而不是直接报失败）：
- * - applied：已有证据表明操作被应用（含非 2xx + SUCCEEDED 回执）；
- * - rejected：已有证据表明本次未应用；
- * - unknown：没有可信终态，必须保留原标识核对，禁止换 ID 重发。
+ * 写请求评估拆成两个维度：
+ * - attempt：本次 HTTP 尝试是否发出/是否被接受；
+ * - intent：原订单/原操作（同一原 ID）是否已经应用。
+ *
+ * 关键约束：本次尝试被拒（401/403/404/409/422/429、operationAccepted:false）只描述当前请求，
+ * 不能证明同一原 ID 以前的一次未知尝试没有执行。原意图结论只能来自与请求 id/kind/target
+ * 匹配的可信回执。
  */
-export type WriteOutcomeClass = 'applied' | 'rejected' | 'unknown';
+export type HttpAttemptClass = 'not-sent' | 'rejected' | 'accepted' | 'unknown';
+export type IntentClass = 'applied' | 'not-applied' | 'unknown';
 
-const OPERATION_CLASS: Record<OperationReceipt['status'], WriteOutcomeClass> = {
+export type AssessmentReason =
+  | 'receipt-applied'
+  | 'receipt-rejected'
+  | 'receipt-pending'
+  | 'receipt-absent'
+  | 'receipt-invalid'
+  | 'receipt-mismatch'
+  | 'transport-before-send'
+  | 'transport-unknown'
+  | 'http-attempt-rejected'
+  | 'http-attempt-unknown'
+  | 'protocol-malformed'
+  | 'local-precheck';
+
+export interface WriteAssessment {
+  readonly attempt: HttpAttemptClass;
+  readonly intent: IntentClass;
+  readonly reason: AssessmentReason;
+}
+
+// 与后端受跟踪操作的请求描述符一致；现有八种操作都必须关联目标。
+const OPERATION_TARGET_BY_KIND = {
+  ORDER_CANCEL: 'ORDER',
+  TASK_CONTROL: 'TASK',
+  USER_UPDATE: 'USER',
+  ACCOUNT_RESTRICT: 'ACCOUNT',
+  ACCOUNT_CHECK: 'ACCOUNT',
+  ACCOUNT_SYNC: 'ACCOUNT',
+  ACCOUNT_RECONCILE: 'ACCOUNT',
+  PLATFORM_UPDATE: 'PLATFORM',
+} as const satisfies Record<OperationKind, OperationTargetType>;
+
+/** 发送前确定的完整原请求身份；不得从响应回执反向构造后与自身比较。 */
+export type OriginalOperationIdentity = {
+  [Kind in OperationKind]: {
+    readonly id: string;
+    readonly kind: Kind;
+    readonly targetType: (typeof OPERATION_TARGET_BY_KIND)[Kind];
+    readonly targetId: Kind extends 'PLATFORM_UPDATE' ? 'platform' : string;
+  };
+}[OperationKind];
+
+/** 在发送前被本地规则拦截：确定未发送，但同样不能证明原意图此前未执行。 */
+export const LOCAL_PRE_SEND_REJECTION: WriteAssessment = {
+  attempt: 'not-sent',
+  intent: 'unknown',
+  reason: 'local-precheck',
+};
+
+/** 只有完整、合法且逐字段匹配的原请求身份，才能采用回执结论。 */
+export function receiptMatchesRequest(
+  receipt: OperationReceipt,
+  expected: OriginalOperationIdentity,
+): boolean {
+  // 此公共边界也可能由 JavaScript 或绕过类型的调用者进入，不能只依赖静态签名。
+  if (
+    typeof expected !== 'object' ||
+    expected === null ||
+    Array.isArray(expected) ||
+    typeof expected.id !== 'string' ||
+    expected.id.trim().length === 0 ||
+    typeof expected.kind !== 'string' ||
+    !Object.hasOwn(OPERATION_TARGET_BY_KIND, expected.kind) ||
+    typeof expected.targetType !== 'string' ||
+    typeof expected.targetId !== 'string' ||
+    expected.targetId.trim().length === 0 ||
+    OPERATION_TARGET_BY_KIND[expected.kind] !== expected.targetType ||
+    (expected.kind === 'PLATFORM_UPDATE' && expected.targetId !== 'platform')
+  ) {
+    return false;
+  }
+  return (
+    receipt.id === expected.id &&
+    receipt.kind === expected.kind &&
+    receipt.targetType === expected.targetType &&
+    receipt.targetId === expected.targetId
+  );
+}
+
+const OPERATION_INTENT: Record<OperationReceipt['status'], IntentClass> = {
   SUCCEEDED: 'applied',
-  REJECTED: 'rejected',
+  REJECTED: 'not-applied',
   PROCESSING: 'unknown',
   UNKNOWN: 'unknown',
   CONFLICT: 'unknown',
 };
 
-function classifyOperation(receipt: OperationReceipt): WriteOutcomeClass {
-  return OPERATION_CLASS[receipt.status];
+function assessReceipt(
+  receipt: ReceiptParse,
+  expected: OriginalOperationIdentity,
+): { readonly intent: IntentClass; readonly reason: AssessmentReason } {
+  if (receipt.kind === 'absent') return { intent: 'unknown', reason: 'receipt-absent' };
+  if (receipt.kind === 'invalid') return { intent: 'unknown', reason: 'receipt-invalid' };
+  if (!receiptMatchesRequest(receipt.receipt, expected)) {
+    return { intent: 'unknown', reason: 'receipt-mismatch' };
+  }
+  const intent = OPERATION_INTENT[receipt.receipt.status];
+  if (intent === 'applied') return { intent, reason: 'receipt-applied' };
+  if (intent === 'not-applied') return { intent, reason: 'receipt-rejected' };
+  return { intent, reason: 'receipt-pending' };
 }
 
-export function classifyWriteOutcome(outcome: ApiOutcome<unknown>): WriteOutcomeClass {
+/**
+ * 评估一次写请求结果；完整身份必须来自发送前保存的原请求上下文。
+ * 身份缺失、不完整或错配统一保留 unknown / receipt-mismatch。
+ * applied 仅表示该种操作的匹配回执结论，不等于订单成交、任务完成或同步成功。
+ */
+export function classifyWriteOutcome(
+  outcome: ApiOutcome<unknown>,
+  expected: OriginalOperationIdentity,
+): WriteAssessment {
   switch (outcome.kind) {
-    case 'success':
-      return outcome.operation ? classifyOperation(outcome.operation) : 'applied';
-    case 'http-error':
-      if (outcome.operation) return classifyOperation(outcome.operation);
-      // 4xx 尚未进入业务回调：已认证前置拒绝会带 operationAccepted:false；
-      // 5xx 与无法识别的响应一律按未知处理，不自动重试。
-      return outcome.status >= 400 && outcome.status < 500 ? 'rejected' : 'unknown';
+    case 'success': {
+      const receipt = assessReceipt(outcome.receipt, expected);
+      return { attempt: 'accepted', intent: receipt.intent, reason: receipt.reason };
+    }
+    case 'http-data': {
+      const attempt: HttpAttemptClass = outcome.status < 500 ? 'rejected' : 'unknown';
+      return { attempt, ...assessReceipt(outcome.receipt, expected) };
+    }
+    case 'http-error': {
+      const attempt: HttpAttemptClass = outcome.status < 500 ? 'rejected' : 'unknown';
+      return { attempt, ...assessReceipt(outcome.receipt, expected) };
+    }
     case 'transport-error':
-    case 'malformed':
-      return 'unknown';
+      return outcome.attempted
+        ? { attempt: 'unknown', intent: 'unknown', reason: 'transport-unknown' }
+        : { attempt: 'not-sent', intent: 'unknown', reason: 'transport-before-send' };
+    case 'malformed': {
+      const receipt = assessReceipt(outcome.receipt, expected);
+      return { attempt: 'unknown', intent: receipt.intent, reason: receipt.reason };
+    }
   }
 }
 
-/** 非 2xx 是否仍带回了可用的原操作回执。 */
-export function isOperationPreserved(
-  outcome: ApiOutcome<unknown>,
-): outcome is Extract<ApiOutcome<unknown>, { kind: 'http-error' }> & { operation: OperationReceipt } {
-  return outcome.kind === 'http-error' && outcome.operation !== null;
+/** 非 2xx / 畸形响应是否仍带回了可用的原操作回执。 */
+export function isOperationPreserved(outcome: ApiOutcome<unknown>): outcome is Extract<
+  ApiOutcome<unknown>,
+  { kind: 'http-error' }
+> & {
+  receipt: { kind: 'valid'; receipt: OperationReceipt };
+} {
+  return outcome.kind === 'http-error' && outcome.receipt.kind === 'valid';
 }
 
 const RETRYABLE_READ_STATUSES: Record<number, true> = {
@@ -53,32 +168,35 @@ const RETRYABLE_READ_STATUSES: Record<number, true> = {
 /** 仅用于只读查询的重试判定；写请求永不自动重试。 */
 export function isRetryableReadFailure(outcome: ApiOutcome<unknown>): boolean {
   if (outcome.kind === 'transport-error') return outcome.reason === 'network' || outcome.reason === 'timeout';
-  if (outcome.kind === 'http-error') return RETRYABLE_READ_STATUSES[outcome.status] === true;
+  if (outcome.kind === 'http-error' || outcome.kind === 'http-data') {
+    return RETRYABLE_READ_STATUSES[outcome.status] === true;
+  }
   return false;
 }
 
 export function describeApiOutcome(outcome: ApiOutcome<unknown>): string {
   switch (outcome.kind) {
     case 'success':
-      return outcome.operation ? `请求已完成（回执 ${outcome.operation.status}）` : '请求已完成';
+      return outcome.receipt.kind === 'valid'
+        ? `请求已完成（回执 ${outcome.receipt.receipt.status}）`
+        : '请求已完成，但未携带可识别的原操作回执';
+    case 'http-data':
+      return `服务器返回 ${outcome.status}，仅可读取降级/诊断数据，不代表业务成功`;
     case 'http-error':
-      return outcome.operation
-        ? `${outcome.error.message}（原操作回执：${outcome.operation.status}）`
+      return outcome.receipt.kind === 'valid'
+        ? `${outcome.error.message}（原操作回执：${outcome.receipt.receipt.status}）`
         : outcome.error.message;
     case 'transport-error':
       return outcome.reason === 'timeout'
         ? '请求超时，结果未知；请按原操作标识核对，不要更换标识重发'
         : outcome.reason === 'aborted'
-          ? '请求已取消'
+          ? outcome.attempted
+            ? '请求已发出后取消，结果未知'
+            : '请求已取消（尚未发送）'
           : '网络异常，结果未知；请按原操作标识核对';
     case 'malformed':
       return `${outcome.message}；请按原操作标识核对`;
   }
-}
-
-/** 提交前生成的 UUID v4 原操作标识；创建后必须持久化，恢复时使用同一个值。 */
-export function createOperationId(cryptoImpl: Crypto = globalThis.crypto): string {
-  return cryptoImpl.randomUUID();
 }
 
 /**
@@ -99,4 +217,15 @@ export class ApiOutcomeError extends Error {
 export function requireData<T>(outcome: ApiOutcome<T>): T {
   if (outcome.kind === 'success') return outcome.data;
   throw new ApiOutcomeError(outcome);
+}
+
+/** 提交前生成的 UUID v4 原操作标识；创建后必须持久化，恢复时使用同一个值。 */
+export function createOperationId(cryptoImpl: Crypto = globalThis.crypto): string {
+  return cryptoImpl.randomUUID();
+}
+
+/** 读取有效回执；invalid/absent 返回 null，调用方不得把 null 当作“未执行”。 */
+export function validReceiptOf(outcome: ApiOutcome<unknown>): OperationReceipt | null {
+  if (outcome.kind === 'transport-error') return null;
+  return outcome.receipt.kind === 'valid' ? outcome.receipt.receipt : null;
 }

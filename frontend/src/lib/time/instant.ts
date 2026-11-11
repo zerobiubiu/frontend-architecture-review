@@ -35,7 +35,7 @@ export interface WallClockFields {
 const UTC_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?Z$/;
 const WALL_PATTERN = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?$/;
 
-const MAX_FRACTION_DIGITS = 6;
+const MAX_EFFECTIVE_FRACTION_DIGITS = 6;
 
 function daysInMonth(year: number, month: number): number {
   if (month === 2) {
@@ -46,6 +46,9 @@ function daysInMonth(year: number, month: number): number {
 }
 
 function validateFields(fields: Omit<WallClockFields, 'fraction'>, fraction: string): TimeParseResult<null> {
+  if (fields.year < 1 || fields.year > 9999) {
+    return { ok: false, code: 'calendar', message: '年份必须在 0001–9999 之间' };
+  }
   if (fields.month < 1 || fields.month > 12) {
     return { ok: false, code: 'calendar', message: '月份必须在 01–12 之间' };
   }
@@ -55,8 +58,13 @@ function validateFields(fields: Omit<WallClockFields, 'fraction'>, fraction: str
   if (fields.hour > 23 || fields.minute > 59 || fields.second > 59) {
     return { ok: false, code: 'calendar', message: '时间必须在 00:00:00–23:59:59 之间' };
   }
-  if (fraction.length > MAX_FRACTION_DIGITS) {
-    return { ok: false, code: 'fraction-digits', message: '小数秒最多六位' };
+  // 后端按“去掉尾零后的有效小数”判定精度；尾零不增加精度，raw 仍原样保留。
+  if (fraction.replace(/0+$/, '').length > MAX_EFFECTIVE_FRACTION_DIGITS) {
+    return {
+      ok: false,
+      code: 'fraction-digits',
+      message: '小数秒最多六位有效数字（尾随零不计）',
+    };
   }
   return { ok: true, value: null };
 }

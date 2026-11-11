@@ -34,7 +34,7 @@ function Harness({
   readonly isStale?: boolean;
   readonly isLoading?: boolean;
   readonly totalItems?: number;
-  readonly rowsOverride?: readonly Row[];
+  readonly rowsOverride?: Row[];
 }) {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -133,7 +133,7 @@ describe('DataTableShell', () => {
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
   });
 
-  it('分页控件不会在总数变化后保留旧页', async () => {
+  it('上一页按钮只发出页码回调（分页状态由调用方拥有）', async () => {
     const user = userEvent.setup();
     const onPageChange = vi.fn();
     render(
@@ -148,5 +148,52 @@ describe('DataTableShell', () => {
     );
     await user.click(screen.getByRole('button', { name: /previous/i }));
     expect(onPageChange).toHaveBeenCalledWith(1);
+  });
+
+  it('没有 onSortingChange 时不渲染假排序按钮', () => {
+    render(
+      <DataTableShell<Row>
+        data={ROWS.slice(0, 5)}
+        columns={COLUMNS}
+        totalItems={5}
+        page={1}
+        pageSize={10}
+        onPageChange={() => undefined}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: '订单号' })).not.toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: '订单号' })).not.toHaveAttribute('aria-sort');
+  });
+
+  it('总数真实收缩后合计、页码与按钮状态同步更新', async () => {
+    const user = userEvent.setup();
+    const onPageChange = vi.fn();
+    const { rerender } = render(
+      <DataTableShell<Row>
+        data={ROWS.slice(20, 25)}
+        columns={COLUMNS}
+        totalItems={55}
+        page={3}
+        pageSize={10}
+        onPageChange={onPageChange}
+      />,
+    );
+    expect(screen.getByTestId('data-table-total')).toHaveTextContent('共 55 条');
+    expect(screen.getByRole('button', { name: /next/i })).toBeEnabled();
+
+    rerender(
+      <DataTableShell<Row>
+        data={ROWS.slice(0, 5)}
+        columns={COLUMNS}
+        totalItems={5}
+        page={1}
+        pageSize={10}
+        onPageChange={onPageChange}
+      />,
+    );
+    expect(screen.getByTestId('data-table-total')).toHaveTextContent('共 5 条');
+    expect(screen.getByRole('button', { name: /next/i })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: /previous/i }));
+    expect(onPageChange).not.toHaveBeenCalled();
   });
 });

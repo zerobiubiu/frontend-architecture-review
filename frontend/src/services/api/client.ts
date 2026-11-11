@@ -9,6 +9,9 @@ export interface ApiClientConfig {
   /** 会话纪元；用于丢弃旧会话的迟到响应。默认恒为 0。 */
   readonly getSessionEpoch?: () => number;
   readonly defaultTimeoutMs?: number;
+  readonly getSessionSignal?: () => AbortSignal;
+  readonly isSessionCurrent?: (epoch: number) => boolean;
+  readonly onUnauthorized?: (epoch: number) => void;
 }
 
 export interface WriteRequestOptions extends Omit<ApiRequestOptions, 'method' | 'body' | 'csrfToken'> {
@@ -34,16 +37,12 @@ export interface ApiClient {
  */
 export function createApiClient(config: ApiClientConfig): ApiClient {
   const runtime: RequestRuntimeConfig = {
-    baseUrl: config.baseUrl,
+    ...config,
     getSessionEpoch: config.getSessionEpoch ?? (() => 0),
   };
-  const csrf = (): string | null => config.getCsrfToken?.() ?? null;
 
   const request = <T>(path: string, options: ApiRequestOptions = {}): Promise<ApiOutcome<T>> =>
-    requestJson<T>(runtime, path, {
-      ...options,
-      timeoutMs: options.timeoutMs ?? config.defaultTimeoutMs,
-    });
+    requestJson<T>(runtime, path, options);
 
   return {
     baseUrl: config.baseUrl,
@@ -55,14 +54,12 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
         ...options,
         method: 'POST',
         body,
-        csrfToken: options.csrfToken ?? csrf(),
       }),
     patch: <T>(path: string, body: unknown, options: WriteRequestOptions = {}) =>
       request<T>(path, {
         ...options,
         method: 'PATCH',
         body,
-        csrfToken: options.csrfToken ?? csrf(),
       }),
   };
 }

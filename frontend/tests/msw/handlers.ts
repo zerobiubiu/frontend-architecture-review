@@ -1,5 +1,11 @@
 import { delay, HttpResponse, http } from 'msw';
-import { receiptJson } from './fixtures';
+import {
+  ACCOUNT_RECONCILE_REQUEST,
+  ACCOUNT_SYNC_REQUEST,
+  ORDER_CANCEL_REQUEST,
+  receiptJson,
+  TASK_CONTROL_REQUEST,
+} from './fixtures';
 
 export const API = 'http://localhost/api/v1';
 
@@ -8,6 +14,10 @@ export const API = 'http://localhost/api/v1';
  * 这里只覆盖协议分支，不冒充真实后端行为。
  */
 export const handlers = [
+  // 单元/组件测试默认匿名；认证正例由各测试显式覆写，不与真实后端通信。
+  http.get(`${API}/auth/me`, () =>
+    HttpResponse.json({ error: { code: 'UNAUTHENTICATED', message: 'Mock：当前未登录' } }, { status: 401 }),
+  ),
   http.get(`${API}/meta`, () =>
     HttpResponse.json({ data: { version: '3.0.0', environment: 'test', capabilities: [] } }),
   ),
@@ -18,14 +28,18 @@ export const handlers = [
     }),
   ),
 
-  http.post(`${API}/orders/:id/cancel`, () =>
+  http.post(`${API}/orders/:id/cancel`, ({ request, params }) =>
     HttpResponse.json({
-      data: { orderId: 'order-1', status: 'CANCELING' },
-      operation: receiptJson({ kind: 'ORDER_CANCEL', status: 'SUCCEEDED' }),
+      data: { orderId: String(params.id), status: 'CANCELING' },
+      operation: receiptJson({
+        ...ORDER_CANCEL_REQUEST,
+        id: request.headers.get('Idempotency-Key') ?? ORDER_CANCEL_REQUEST.id,
+        targetId: String(params.id),
+      }),
     }),
   ),
 
-  http.post(`${API}/accounts/:id/assets/sync`, () =>
+  http.post(`${API}/accounts/:id/assets/sync`, ({ request, params }) =>
     HttpResponse.json(
       {
         error: {
@@ -33,17 +47,28 @@ export const handlers = [
           message: '钱包读取失败，已保存失败回执',
           requestId: 'req-502',
         },
-        operation: receiptJson({ kind: 'ACCOUNT_SYNC', status: 'SUCCEEDED' }),
+        operation: receiptJson({
+          ...ACCOUNT_SYNC_REQUEST,
+          id: request.headers.get('Idempotency-Key') ?? ACCOUNT_SYNC_REQUEST.id,
+          targetId: String(params.id),
+        }),
       },
       { status: 502 },
     ),
   ),
 
-  http.post(`${API}/tasks/:id/control`, () =>
+  http.post(`${API}/tasks/:id/control`, ({ request, params }) =>
     HttpResponse.json(
       {
         error: { code: 'RATE_LIMITED', message: '请求过于频繁', requestId: 'req-429' },
-        operation: receiptJson({ kind: 'TASK_CONTROL', status: 'UNKNOWN' }),
+        operation: receiptJson(
+          {
+            ...TASK_CONTROL_REQUEST,
+            id: request.headers.get('Idempotency-Key') ?? TASK_CONTROL_REQUEST.id,
+            targetId: String(params.id),
+          },
+          { status: 'UNKNOWN' },
+        ),
       },
       { status: 429 },
     ),
@@ -70,6 +95,7 @@ export const handlers = [
     ),
   ),
 
+  // 演示用错误结构：details.fields 不是当前公开契约字段，仅用于前端错误分支测试。
   http.post(`${API}/orders`, () =>
     HttpResponse.json(
       {
@@ -86,11 +112,75 @@ export const handlers = [
 
   http.get(`${API}/operations/:id`, ({ params }) =>
     HttpResponse.json({
-      data: receiptJson({
-        id: String(params.id),
-        kind: 'ACCOUNT_RECONCILE',
-        status: 'PROCESSING',
+      data: receiptJson({ ...ACCOUNT_RECONCILE_REQUEST, id: String(params.id) }, { status: 'PROCESSING' }),
+    }),
+  ),
+
+  http.get(`${API}/healthz`, () =>
+    HttpResponse.json(
+      {
+        data: {
+          status: 'degraded',
+          database: { online: false, environmentValid: false },
+          worker: { online: false, lastSeenAt: null, status: 'UNKNOWN' },
+        },
+      },
+      { status: 503 },
+    ),
+  ),
+
+  http.get(`${API}/orders/bad-operation`, () =>
+    HttpResponse.json({
+      data: null,
+      operation: {
+        id: '7f4f7f6e-6a2a-4c1e-9f0f-1a2b3c4d5e6f',
+        kind: 'ORDER_CANCEL',
+        status: 'UNRECOGNIZED_STATUS',
+      },
+    }),
+  ),
+
+  http.get(`${API}/orders/unknown-kind-operation`, () =>
+    HttpResponse.json({
+      data: null,
+      operation: {
+        id: '7f4f7f6e-6a2a-4c1e-9f0f-1a2b3c4d5e6f',
+        kind: 'FUTURE_ACTION',
+        status: 'SUCCEEDED',
+      },
+    }),
+  ),
+
+  http.get(`${API}/orders/missing-id-operation`, () =>
+    HttpResponse.json({
+      data: null,
+      operation: { kind: 'ORDER_CANCEL', status: 'SUCCEEDED' },
+    }),
+  ),
+
+  http.get(`${API}/orders/invalid-error-with-operation`, () =>
+    HttpResponse.json(
+      {
+        error: { unexpected: true },
+        operation: receiptJson(ORDER_CANCEL_REQUEST),
+      },
+      { status: 500 },
+    ),
+  ),
+
+  http.get(`${API}/orders/mismatched-operation`, () =>
+    HttpResponse.json({
+      data: { ok: true },
+      operation: receiptJson(ORDER_CANCEL_REQUEST, {
+        id: '00000000-0000-4000-8000-000000000099',
       }),
+    }),
+  ),
+
+  http.get(`${API}/orders/extension-fields`, () =>
+    HttpResponse.json({
+      data: { ok: true },
+      operation: { ...receiptJson(ORDER_CANCEL_REQUEST), futureField: 'kept' },
     }),
   ),
 

@@ -9,7 +9,7 @@ export function NotFoundPage() {
         页面不存在
       </Text>
       <Text color="secondary">该地址没有对应页面；开发验证页仅在开发环境注册。</Text>
-      <Button label="返回工程概览" variant="secondary" onClick={() => void navigate({ to: '/' })} />
+      <Button label="返回工作台" variant="secondary" onClick={() => void navigate({ to: '/' })} />
     </section>
   );
 }

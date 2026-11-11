@@ -8,6 +8,8 @@ import { defineConfig } from 'vite';
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
+    preserveSymlinks: true,
+    dedupe: ['react', 'react-dom', 'zod', 'hono'],
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },

@@ -18,9 +18,7 @@
 
 @layer components {
   /* 业务级结构样式放在这里；组件外观一律走 Astryx props / 主题变量。 */
-  :root {
-    color-scheme: light dark;
-  }
+  /* color-scheme 由 Astryx 主题唯一负责（astryx-theme 层），业务层不得再次声明，否则会覆盖显式 light/dark。 */
 
   html,
   body,

@@ -40,16 +40,11 @@ export const tableFeatures = {
 
 type DataTableFeatures = typeof tableFeatures;
 
-export interface DataTableShellProps<TData extends RowData> {
-  readonly data: readonly TData[];
-  readonly columns: readonly ColumnDef<DataTableFeatures, TData>[];
-  /** 服务端分页：唯一数据源。 */
-  readonly totalItems: number;
-  readonly page: number;
-  readonly pageSize: number;
-  readonly onPageChange: (page: number) => void;
-  readonly onPageSizeChange?: (pageSize: number) => void;
-  readonly pageSizeOptions?: readonly number[];
+interface DataTableShellBaseProps<TData extends RowData> {
+  /** 服务端返回的数据：当前页或完整列表；保持引用，不在组件内复制。 */
+  readonly data: TData[];
+  /** 列定义；仅支持单行平列，分组表头暂不支持。 */
+  readonly columns: ColumnDef<DataTableFeatures, TData>[];
   readonly sorting?: SortingState;
   readonly onSortingChange?: (sorting: SortingState) => void;
   readonly columnVisibility?: ColumnVisibilityState;
@@ -67,6 +62,31 @@ export interface DataTableShellProps<TData extends RowData> {
   readonly rowIndexStart?: number;
 }
 
+interface ServerPaginationProps {
+  /** 默认沿用服务端分页，页码及总数只由调用方持有。 */
+  readonly pagination?: true;
+  readonly totalItems: number;
+  readonly page: number;
+  readonly pageSize: number;
+  readonly onPageChange: (page: number) => void;
+  readonly onPageSizeChange?: (pageSize: number) => void;
+  readonly pageSizeOptions?: readonly number[];
+}
+
+interface NoPaginationProps {
+  /** 完整返回列表不制造页码、总数或分页回调。 */
+  readonly pagination: false;
+  readonly totalItems?: never;
+  readonly page?: never;
+  readonly pageSize?: never;
+  readonly onPageChange?: never;
+  readonly onPageSizeChange?: never;
+  readonly pageSizeOptions?: never;
+}
+
+export type DataTableShellProps<TData extends RowData> = DataTableShellBaseProps<TData> &
+  (ServerPaginationProps | NoPaginationProps);
+
 const SKELETON_ROWS = [0, 1, 2, 3];
 
 /**
@@ -76,34 +96,29 @@ const SKELETON_ROWS = [0, 1, 2, 3];
  * - Loading / Empty / Error / Stale 是四种独立状态，不互相冒充；
  * - 本阶段不做单元格编辑、Excel 粘贴与虚拟滚动。
  */
-export function DataTableShell<TData extends RowData>({
-  data,
-  columns,
-  totalItems,
-  page,
-  pageSize,
-  onPageChange,
-  onPageSizeChange,
-  pageSizeOptions = [10, 25, 50],
-  sorting = [],
-  onSortingChange,
-  columnVisibility = {},
-  onColumnVisibilityChange,
-  isLoading = false,
-  error = null,
-  onRetry,
-  isStale = false,
-  title,
-  toolbar,
-  emptyTitle = '暂无数据',
-  emptyDescription,
-  getRowId,
-  rowIndexStart,
-}: DataTableShellProps<TData>) {
+export function DataTableShell<TData extends RowData>(props: DataTableShellProps<TData>) {
+  const {
+    data,
+    columns,
+    sorting = [],
+    onSortingChange,
+    columnVisibility = {},
+    onColumnVisibilityChange,
+    isLoading = false,
+    error = null,
+    onRetry,
+    isStale = false,
+    title,
+    toolbar,
+    emptyTitle = '暂无数据',
+    emptyDescription,
+    getRowId,
+    rowIndexStart,
+  } = props;
   const table = useTable({
     features: tableFeatures,
-    data: [...data],
-    columns: [...columns],
+    data,
+    columns,
     state: { sorting, columnVisibility },
     onSortingChange: (updater) => {
       if (!onSortingChange) return;
@@ -123,7 +138,7 @@ export function DataTableShell<TData extends RowData>({
   const showEmpty = !isLoading && error === null && rows.length === 0;
 
   return (
-    <section className="flex flex-col gap-3" data-testid="data-table-shell">
+    <section className="flex min-w-0 flex-col gap-3" data-testid="data-table-shell">
       <div className="flex flex-wrap items-center gap-3">
         {title === undefined ? null : (
           <Text size="lg" weight="semibold">
@@ -131,12 +146,13 @@ export function DataTableShell<TData extends RowData>({
           </Text>
         )}
         <Text size="sm" color="secondary" data-testid="data-table-total">
-          共 {totalItems} 条
+          {props.pagination === false ? `已返回 ${data.length} 条` : `共 ${props.totalItems} 条`}
         </Text>
         <div className="ms-auto flex items-center gap-2">
           {toolbar}
           {hideableColumns.length > 0 && onColumnVisibilityChange ? (
             <DropdownMenu
+              alignment="end"
               button={{ label: '列', variant: 'secondary', size: 'sm', icon: <IconColumns3 size={16} /> }}
             >
               {hideableColumns.map((column) => (
@@ -187,23 +203,35 @@ export function DataTableShell<TData extends RowData>({
 
       {rows.length > 0 ? (
         <Table
+          aria-label={typeof title === 'string' ? `${title} · 横向滚动区域` : '数据表格 · 横向滚动区域'}
+          className="min-w-[48rem]"
           density="compact"
           dividers="rows"
           hasHover
-          rowIndexStart={rowIndexStart ?? (page - 1) * pageSize + 1}
-          rowCount={totalItems}
+          rowIndexStart={
+            rowIndexStart ?? (props.pagination === false ? 1 : (props.page - 1) * props.pageSize + 1)
+          }
+          rowCount={props.pagination === false ? data.length : props.totalItems}
         >
           <TableHeader>
             {headerGroups.map((headerGroup) => (
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header) => {
                   const sorted = header.column.getIsSorted();
+                  // 只有调用方提供 onSortingChange（服务端支持排序）时才渲染排序按钮，
+                  // 避免出现“可点击但无效果”的假控件。
+                  const sortable = Boolean(onSortingChange) && header.column.getCanSort();
                   return (
                     <TableHeaderCell
                       key={header.id}
-                      aria-sort={sorted === 'asc' ? 'ascending' : sorted === 'desc' ? 'descending' : 'none'}
+                      {...(sortable
+                        ? {
+                            'aria-sort':
+                              sorted === 'asc' ? 'ascending' : sorted === 'desc' ? 'descending' : 'none',
+                          }
+                        : {})}
                     >
-                      {header.column.getCanSort() ? (
+                      {sortable ? (
                         <button
                           type="button"
                           className="inline-flex items-center gap-1 text-start"
@@ -239,15 +267,15 @@ export function DataTableShell<TData extends RowData>({
         </Table>
       ) : null}
 
-      {totalItems > 0 ? (
+      {props.pagination !== false && props.totalItems > 0 ? (
         <div className="flex flex-wrap items-center justify-end gap-3">
           <Pagination
-            page={page}
-            onChange={onPageChange}
-            totalItems={totalItems}
-            pageSize={pageSize}
-            {...(onPageSizeChange ? { onPageSizeChange } : {})}
-            pageSizeOptions={[...pageSizeOptions]}
+            page={props.page}
+            onChange={props.onPageChange}
+            totalItems={props.totalItems}
+            pageSize={props.pageSize}
+            {...(props.onPageSizeChange ? { onPageSizeChange: props.onPageSizeChange } : {})}
+            pageSizeOptions={[...(props.pageSizeOptions ?? [10, 25, 50])]}
             size="sm"
             isDisabled={isLoading}
           />
